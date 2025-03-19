@@ -1,14 +1,15 @@
 package hnswindex
 
 import (
-	"bytes"
+	"encoding/binary"
+	"fmt"
 	"math"
 
 	"github.com/cockroachdb/pebble"
 )
 
 type DB struct {
-	db *pebble.DB
+	Db *pebble.DB
 }
 
 func New(path string) (*DB, error) {
@@ -20,54 +21,69 @@ func New(path string) (*DB, error) {
 }
 
 func (db *DB) Close() {
-	db.db.Close()
+	db.Db.Close()
 }
 
-func (db *DB) NewGraph(name string, dim int, M uint8, efCount int) (*Graph, error) {
-	h := Graph{name: name, m: M, db: db, dim: dim, efCount: efCount}
-	// default values used in c++ implementation
-	h.levelMult = 1 / math.Log(float64(M))
+func (db *DB) NewGraph(name string, dim int, M uint8, mMax uint8, mMax0 uint8, efCount int, epUpdateFreq uint32) (*Graph, error) {
+	h := Graph{
+		name:         name,
+		m:            M,
+		mMax:         mMax,
+		mMax0:        mMax0,
+		Db:           db,
+		dim:          dim,
+		efCount:      efCount,
+		levelMult:    1 / math.Log(float64(mMax)),
+		epUpdateFreq: epUpdateFreq,
+	}
 	return &h, nil
 }
 
-func (db *DB) insertGraphVector(graphid uint32, name []byte, vec []float32) (uint64, error) {
-	//TODO: add mutex
+func (db *DB) insertGraphVector(graphid uint32, name []byte, vec []float32, batch *pebble.Batch) (uint64, error) {
 	nameKey := NameKeyEncode(graphid, name)
-	nameId, err := db.newVectorID(graphid)
+	nameId, err := db.newVectorID(graphid, batch)
 	if err != nil {
 		return 0, err
 	}
 	nameValue := NameValueEncode(nameId)
-
-	db.db.Set(nameKey, nameValue, nil)
+	batch.Set(nameKey, nameValue, nil)
 
 	vecKey := VectorKeyEncode(graphid, nameId)
 	vecValue := VectorValueEncode(vec)
-	db.db.Set(vecKey, vecValue, nil)
-	db.db.Set(NameRevKeyEncode(graphid, nameId), name, nil)
+	batch.Set(vecKey, vecValue, nil)
+	batch.Set(NameRevKeyEncode(graphid, nameId), name, nil)
 
 	return nameId, nil
 }
 
-func (db *DB) newVectorID(graphId uint32) (uint64, error) {
-	prefix := NameRevGraphPrefix(graphId)
-	iter, err := db.db.NewIter(&pebble.IterOptions{LowerBound: prefix})
-	if err != nil {
+func (db *DB) newVectorID(graphId uint32, batch *pebble.Batch) (uint64, error) {
+	counterKey := []byte(fmt.Sprintf("graph:%d:nextid", graphId))
+	val, closer, err := db.Db.Get(counterKey)
+	var nextID uint64
+	if err == pebble.ErrNotFound {
+		nextID = 1
+	} else if err != nil {
 		return 0, err
+	} else {
+		defer closer.Close()
+		nextID = binary.BigEndian.Uint64(val)
 	}
-	defer iter.Close()
-	//TODO: there is probably a more efficient way to do this, like starting above and going backward
-	maxID := uint64(0)
-	for iter.SeekGE(prefix); iter.Valid() && bytes.HasPrefix(iter.Key(), prefix); iter.Next() {
-		_, maxID = NameRevKeyParse(iter.Key())
-	}
-	return maxID + 1, nil
+	newID := nextID
+	nextID++
+	batch.Set(counterKey, encodeUint64(nextID), nil) // Defer commit to caller
+	return newID, nil
+}
+
+func encodeUint64(id uint64) []byte {
+	b := make([]byte, 8)
+	binary.BigEndian.PutUint64(b, id)
+	return b
 }
 
 func (db *DB) getVectorName(graphId uint32, id uint64) ([]byte, error) {
 
 	key := NameRevKeyEncode(graphId, id)
-	val, closer, err := db.db.Get(key)
+	val, closer, err := db.Db.Get(key)
 	if err != nil {
 		return nil, err
 	}

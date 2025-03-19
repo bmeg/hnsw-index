@@ -154,7 +154,7 @@ func LayerKeyParse(key []byte) (uint32, uint8, uint64, float32) {
 	return binary.LittleEndian.Uint32(key[1:]),
 		uint8(key[5]),
 		binary.LittleEndian.Uint64(key[6:]),
-		math.Float32frombits(binary.BigEndian.Uint32((key[14:])))
+		math.Float32frombits(binary.BigEndian.Uint32(key[14:]))
 }
 
 func LayerKeyPrefixEncode(graphId uint32, layer uint8, source uint64) []byte {
