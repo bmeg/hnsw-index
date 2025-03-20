@@ -34,7 +34,7 @@ func Test_Insert(t *testing.T) {
 	var layers uint8 = 8
 	var mMax uint8 = 10
 	var mMax0 uint8 = 20
-	var efCount int = 20
+	var efCount int = 20 // proportional to number of verts in db
 	var epUpdateFreq uint32 = 500
 
 	g, err := idx.NewGraph("graph1", dim, layers, mMax, mMax0, efCount, epUpdateFreq)

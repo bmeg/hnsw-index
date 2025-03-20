@@ -130,15 +130,11 @@ func (graph *Graph) Insert(name []byte, vec []float32, batch *pebble.Batch) erro
 }
 
 func (graph *Graph) Search(vec []float32, K int, ef int) ([][]byte, error) {
-	eLevel, ePoint, eVec, err := graph.getEntryPoint()
-	if err != nil {
-		return nil, err
-	}
 
-	eDist := Euclidean(vec, eVec)
-	if eLevel > 1 && eDist > 1.0 {
-		for l := int(eLevel); l > 0; l-- {
-			eFriends, err := graph.getLayerFriends(uint8(l), ePoint, ef)
+	eDist := Euclidean(vec, graph.epVec)
+	if graph.epLayer > 1 && eDist > 1.0 { // on higher layers if distance is 'close enough' use it
+		for l := int(graph.epLayer); l > 0; l-- { // stop before reaching layer 0
+			eFriends, err := graph.getLayerFriends(uint8(l), graph.epID, ef)
 			if err != nil {
 				return nil, err
 			}
@@ -148,14 +144,14 @@ func (graph *Graph) Search(vec []float32, K int, ef int) ([][]byte, error) {
 			}
 			for i := range eFriends {
 				if fDists[i] < eDist {
-					ePoint = eFriends[i]
+					graph.epID = eFriends[i]
 					eDist = fDists[i]
 				}
 			}
 		}
 	}
 
-	ids, _, err := graph.layerSearch(vec, 0, ePoint, ef)
+	ids, _, err := graph.layerSearch(vec, 0, graph.epID, ef)
 	if err != nil {
 		return nil, err
 	}
