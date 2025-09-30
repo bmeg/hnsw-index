@@ -72,7 +72,7 @@ func NewStore(rootDir string, logger logrus.FieldLogger) (*lsmkv.Store, error) {
 // BenchmarkHNSW benchmarks the HNSW index with varying ef configurations
 func BenchmarkHNSW(b *testing.B) {
 	// Parameters
-	numVectors := 2000
+	numVectors := 40000
 	dim := 512
 	numClusters := 10
 	K := 10
